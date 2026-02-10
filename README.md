@@ -397,7 +397,7 @@ curl -X POST https://zkcg-production.up.railway.app/demo/verify \
 ```
 
 
-## Proof-Based Compliance Evaluation API
+## Proof-Based Compliance Evaluation API (For Sponsers Only)
 
 This endpoint exposes a **deterministic, proof-backed compliance oracle**.  
 It evaluates a predefined policy over supplied inputs and returns:
@@ -595,6 +595,7 @@ Apache-2.0
 ZKCG is built and maintained by a single developer.
 
 👉 Sponsor: [https://github.com/sponsors/MRSKYWAY](https://github.com/sponsors/MRSKYWAY)
+
 
 
 
