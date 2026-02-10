@@ -396,6 +396,137 @@ curl -X POST https://zkcg-production.up.railway.app/demo/verify \
 }
 ```
 
+
+## Proof-Based Compliance Evaluation API
+
+This endpoint exposes a **deterministic, proof-backed compliance oracle**.  
+It evaluates a predefined policy over supplied inputs and returns:
+
+- The policy decision
+- The reasons for failure (if any)
+- A cryptographic proof that the policy was evaluated correctly
+
+⚠️ **Important**  
+This service does **not** source data, perform KYC, or assess fraud.  
+It proves *correct execution of policy logic* over caller-supplied claims.
+
+---
+
+### Endpoint
+
+```
+POST /v1/compliance/evaluate
+Content-Type: application/json
+```
+
+---
+
+### Request Schema
+
+```json
+{
+  "applicant_id": "string",
+  "risk_score": "number (0–100)",
+  "threshold": "number (0–100)",
+  "monthly_income_cents": "number (> 0)",
+  "monthly_debt_cents": "number (>= 0)",
+  "requested_credit_cents": "number (>= 0)"
+}
+```
+
+---
+
+### Field Semantics
+
+| Field | Description |
+|-----|------------|
+| `applicant_id` | Caller-defined identifier for the subject being evaluated |
+| `risk_score` | Precomputed risk score supplied by the caller |
+| `threshold` | Maximum acceptable risk score |
+| `monthly_income_cents` | Claimed monthly income (in cents) |
+| `monthly_debt_cents` | Claimed monthly debt obligations (in cents) |
+| `requested_credit_cents` | Credit amount being evaluated (in cents) |
+
+All numeric values are treated as **claims** and are not independently verified.
+
+---
+
+### Deterministic Policy Rules
+
+The following rules are evaluated:
+
+1. **Risk Score Policy**
+   ```
+   risk_score ≤ threshold
+   ```
+
+2. **Debt-to-Income (DTI) Policy**
+   ```
+   (monthly_debt / monthly_income) ≤ 45%
+   ```
+
+3. **Credit-to-Income Policy**
+   ```
+   (requested_credit / monthly_income) ≤ 300%
+   ```
+
+All calculations use **fixed-point basis points (bps)** for deterministic execution.
+
+---
+
+### Example Request
+
+```bash
+curl -sS -X POST http://127.0.0.1:8080/v1/compliance/evaluate \
+  -H 'content-type: application/json' \
+  -d '{
+    "applicant_id":"cust_001",
+    "risk_score":35,
+    "threshold":50,
+    "monthly_income_cents":500000,
+    "monthly_debt_cents":150000,
+    "requested_credit_cents":1000000
+  }'
+```
+
+---
+
+### Example Response
+
+```json
+{
+  "application_id": "cust_001-35",
+  "decision": "approved",
+  "policy_passed": true,
+  "risk_band": "medium",
+  "reasons": [],
+  "proof_verified": true,
+  "proof": "<PROOF>"
+}
+```
+
+---
+
+### Proof Semantics (Oracle Replacement)
+
+The returned proof attests that:
+
+> The declared policy rules were evaluated correctly over the supplied inputs and resulted in the reported outcome.
+
+The proof guarantees:
+- Deterministic policy execution
+- Correct rule evaluation
+- No reliance on trusted oracles
+
+The proof does **not** guarantee:
+- Correctness of inputs
+- Identity validity
+- Data freshness
+- Absence of fraud
+
+These are intentionally out of scope.
+
+
 ---
 
 ## Notes
