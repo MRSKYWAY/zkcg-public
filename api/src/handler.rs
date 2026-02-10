@@ -1,48 +1,39 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
-use zkcg_verifier::engine::{PublicInputs, VerifierEngine};
-use zkcg_common::{
-    errors::ProtocolError,
-    types::Commitment,
-};
-use base64::engine::general_purpose::STANDARD;
+use axum::{Extension, Json, http::StatusCode};
 use base64::Engine;
-use crate::models::{SubmitProofRequest, SubmitProofResponse, ProveRequest, ProveResponse, ProvePublicInputs};
-use crate::models::{
-    DemoProveRequest,
-    DemoProveResponse,
-    DemoVerifyRequest,
-    DemoVerifyResponse,
-};
-
+use base64::engine::general_purpose::STANDARD;
 use std::sync::{Arc, Mutex};
+use zkcg_common::{errors::ProtocolError, types::Commitment};
+#[cfg(feature = "zk-vm")]
 use zkcg_verifier::backend::ProofBackend;
 #[cfg(feature = "zk-vm")]
-use zkcg_zkvm_host::{prove as zkvm_prove, ZkVmProverError};
 use zkcg_verifier::backend_zkvm::ZkVmBackend;
-use axum::Extension;
+use zkcg_verifier::engine::{PublicInputs, VerifierEngine};
+
+#[cfg(feature = "zk-vm")]
+use zkcg_zkvm_host::{ZkVmProverError, prove as zkvm_prove};
+
+#[cfg(feature = "zk-vm")]
+use crate::models::ProvePublicInputs;
+use crate::models::{
+    ComplianceEvaluateRequest, ComplianceEvaluateResponse, DemoProveRequest, DemoProveResponse,
+    DemoVerifyRequest, DemoVerifyResponse, ProveRequest, ProveResponse, SubmitProofRequest,
+    SubmitProofResponse,
+};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub engine: Arc<Mutex<VerifierEngine>>
+    pub engine: Arc<Mutex<VerifierEngine>>,
 }
 
 pub async fn submit_proof(
     Extension(state): Extension<AppState>,
     Json(req): Json<SubmitProofRequest>,
 ) -> Result<Json<SubmitProofResponse>, (StatusCode, String)> {
-    println!("================ ZKCG =================");
-    println!("📥 Received /v1/submit-proof request");
-    println!("• threshold   : {}", req.public_inputs.threshold);
-    println!("• nonce       : {}", req.public_inputs.nonce);
-    println!("• commitment  : {:?}", req.new_state_commitment);
     let mut engine = state.engine.lock().unwrap();
     let proof_bytes = STANDARD
-    .decode(&req.proof)
-    .map_err(|_| (StatusCode::BAD_REQUEST, "invalid base64 proof".to_string()))?;
+        .decode(&req.proof)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid base64 proof".to_string()))?;
+
     let inputs = PublicInputs {
         threshold: req.public_inputs.threshold,
         old_state_root: req.public_inputs.old_state_root,
@@ -50,11 +41,10 @@ pub async fn submit_proof(
     };
 
     let commitment = Commitment(req.new_state_commitment);
-
     engine
         .process_transition(&proof_bytes, inputs, commitment)
         .map_err(map_error)?;
-    println!("✅ Proof accepted");
+
     Ok(Json(SubmitProofResponse {
         status: "accepted".to_string(),
     }))
@@ -73,48 +63,33 @@ fn map_error(err: ProtocolError) -> (StatusCode, String) {
     }
 }
 
+#[cfg(feature = "zk-vm")]
 fn map_prover_error(err: ZkVmProverError) -> (StatusCode, String) {
     match err {
         ZkVmProverError::PolicyViolation => (
             StatusCode::UNPROCESSABLE_ENTITY,
             "policy violation".to_string(),
         ),
-
-        ZkVmProverError::ExecutionFailed => (
-            StatusCode::BAD_REQUEST,
-            "zkvm execution failed".to_string(),
-        ),
-
+        ZkVmProverError::ExecutionFailed => {
+            (StatusCode::BAD_REQUEST, "zkvm execution failed".to_string())
+        }
     }
 }
 
-
 #[cfg(feature = "zk-vm")]
 pub async fn prove(
-    Extension(_state): Extension<AppState>, // backend NOT needed here
+    Extension(_state): Extension<AppState>,
     Json(req): Json<ProveRequest>,
 ) -> Result<Json<ProveResponse>, (StatusCode, String)> {
-
-    // DEV / DEMO SAFETY
     if std::env::var("ZKCG_ENABLE_PROVER").is_err() {
         return Err((StatusCode::FORBIDDEN, "prover disabled".into()));
     }
 
-    println!("🧪 zkVM prover request received");
-    println!("• secret_value: {}", req.secret_value);
-    println!("• threshold   : {}", req.threshold);
-
-    // ---- IMPORTANT ----
-    // For demo purposes we always prove against GENESIS
     let old_state_root = [0u8; 32];
     let nonce = 1;
 
-    let proof = zkvm_prove(
-        req.secret_value,
-        req.threshold,
-        old_state_root,
-        nonce,
-    ).map_err(|e| map_prover_error(e))?;
+    let proof = zkvm_prove(req.secret_value, req.threshold, old_state_root, nonce)
+        .map_err(map_prover_error)?;
 
     Ok(Json(ProveResponse {
         proof: STANDARD.encode(&proof),
@@ -129,38 +104,63 @@ pub async fn prove(
     }))
 }
 
-#[cfg(feature = "zk-vm")]
-pub fn demo_prove(
-    score: u64,
-    threshold: u64,
-) -> Result<Vec<u8>, ProtocolError> {
-    // demo safety limits
+#[cfg(not(feature = "zk-vm"))]
+pub async fn prove(
+    Extension(_state): Extension<AppState>,
+    Json(_req): Json<ProveRequest>,
+) -> Result<Json<ProveResponse>, (StatusCode, String)> {
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        "zk-vm feature is disabled".to_string(),
+    ))
+}
+
+#[cfg(not(feature = "zk-vm"))]
+pub fn demo_prove(score: u64, threshold: u64) -> Result<Vec<u8>, ProtocolError> {
     if score > 100 || threshold > 100 {
         return Err(ProtocolError::PolicyViolation);
     }
 
-    // Demo = always prove against GENESIS
+    Ok(format!("demo:{score}:{threshold}").into_bytes())
+}
+
+#[cfg(feature = "zk-vm")]
+pub fn demo_prove(score: u64, threshold: u64) -> Result<Vec<u8>, ProtocolError> {
+    if score > 100 || threshold > 100 {
+        return Err(ProtocolError::PolicyViolation);
+    }
+
     let old_state_root = [0u8; 32];
     let nonce = 1;
 
-    let proof = zkvm_prove(
-        score,
-        threshold,
-        old_state_root,
-        nonce,
-    ).map_err(|_| ProtocolError::InvalidProof)?;
+    let proof = zkvm_prove(score, threshold, old_state_root, nonce)
+        .map_err(|_| ProtocolError::InvalidProof)?;
 
     Ok(proof)
 }
 
+#[cfg(not(feature = "zk-vm"))]
+pub fn demo_verify(proof_b64: &str, threshold: u64) -> Result<bool, ProtocolError> {
+    let proof_bytes = STANDARD
+        .decode(proof_b64)
+        .map_err(|_| ProtocolError::InvalidFormat)?;
 
-/// Demo-only proof verification (stateless)
+    let decoded = String::from_utf8(proof_bytes).map_err(|_| ProtocolError::InvalidFormat)?;
+
+    let parts: Vec<&str> = decoded.split(':').collect();
+    if parts.len() != 3 || parts[0] != "demo" {
+        return Ok(false);
+    }
+
+    let encoded_threshold = parts[2]
+        .parse::<u64>()
+        .map_err(|_| ProtocolError::InvalidFormat)?;
+
+    Ok(encoded_threshold == threshold)
+}
 
 #[cfg(feature = "zk-vm")]
-pub fn demo_verify(
-    proof_b64: &str,
-    threshold: u64,
-) -> Result<bool, ProtocolError> {
+pub fn demo_verify(proof_b64: &str, threshold: u64) -> Result<bool, ProtocolError> {
     let proof_bytes = STANDARD
         .decode(proof_b64)
         .map_err(|_| ProtocolError::InvalidFormat)?;
@@ -172,24 +172,16 @@ pub fn demo_verify(
     };
 
     let backend = ZkVmBackend;
-
-     match backend.verify(&proof_bytes, &public_inputs) {
+    match backend.verify(&proof_bytes, &public_inputs) {
         Ok(()) => Ok(true),
         Err(_) => Ok(false),
     }
 }
 
-
 pub async fn demo_prove_handler(
     Json(req): Json<DemoProveRequest>,
 ) -> Result<Json<DemoProveResponse>, (StatusCode, String)> {
-
-    println!("🧪 Demo prover request");
-    println!("• secret_value: {}", req.score);
-    println!("• threshold   : {}", req.threshold);
-
-    let proof = demo_prove(req.score, req.threshold)
-        .map_err(map_error)?;
+    let proof = demo_prove(req.score, req.threshold).map_err(map_error)?;
 
     Ok(Json(DemoProveResponse {
         proof: STANDARD.encode(&proof),
@@ -201,14 +193,9 @@ pub async fn demo_prove_handler(
 pub async fn demo_verify_handler(
     Json(req): Json<DemoVerifyRequest>,
 ) -> Result<Json<DemoVerifyResponse>, (StatusCode, String)> {
+    let verified = demo_verify(&req.proof, req.threshold).map_err(map_error)?;
 
-    println!("🧪 Demo verify request");
-    println!("• threshold: {}", req.threshold);
-
-    let verified = demo_verify(&req.proof, req.threshold)
-        .map_err(map_error)?;
-
-    Ok(Json(DemoVerifyResponse {
-        verified,
-    }))
+    Ok(Json(DemoVerifyResponse { verified }))
 }
+
+ 
