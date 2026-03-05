@@ -6,6 +6,8 @@
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-brightgreen)](https://github.com/sponsors/MRSKYWAY)
 
 ---
+# Important Notice: moved to complete Open Source Repo: https://github.com/MRSKYWAY/ZKCG
+---
 # ZK-Verified Computation Gateway (ZKCG)
 
 **ZKCG enables non-ZK systems to replace trusted oracle logic with verifiable off-chain computation.**  
@@ -595,6 +597,7 @@ Apache-2.0
 ZKCG is built and maintained by a single developer.
 
 👉 Sponsor: [https://github.com/sponsors/MRSKYWAY](https://github.com/sponsors/MRSKYWAY)
+
 
 
 
