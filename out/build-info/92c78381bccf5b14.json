@@ -1,0 +1,1 @@
+{"id":"92c78381bccf5b14","source_id_to_path":{"0":"contracts/examples/BaseZKCGDecisionConsumer.sol","1":"contracts/examples/VerifiableOracleWithPolicy.sol","2":"contracts/interfaces/IZKCGVerifier.sol","3":"contracts/libraries/ZKCGDecisionLib.sol"},"language":"Solidity"}

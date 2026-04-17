@@ -3,5 +3,19 @@ members = [
     "verifier",
     "common",
     "api",
-]
+    "circuits",
+    "zkvm/guest",
+    "zkvm/host",
+    "halo2/prover",
+    "payout/worker"]
 resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

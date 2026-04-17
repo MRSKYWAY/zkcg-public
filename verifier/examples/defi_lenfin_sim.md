@@ -69,10 +69,11 @@ Each loan produces **one Halo2 proof**.
 ### 4. Verification (stateless)
 
 ```rust
-backend.verify(&proof, &inputs)
+let proof = Proof::new(ProofSystem::Halo2, proof_bytes);
+Verifier::verify(&proof, &inputs)
 ```
 
-Halo2 verifies:
+ZKCG routes the proof to the Halo2 adapter and verifies:
 
 | Parameter | Meaning |
 |--------|--------|
@@ -97,7 +98,8 @@ Halo2 Prover
  │
  │  proof(score ≤ threshold)
  ▼
-Halo2 Verifier
+ZKCG Verifier
+ (Halo2 adapter)
  │
  │  accept / reject
  ▼
@@ -106,7 +108,7 @@ Application Logic
 
 ---
 
-## What Halo2 Verifies
+## What The Universal Verifier Checks For Halo2
 
 ✅ Policy correctness  
 ✅ Cryptographic validity  

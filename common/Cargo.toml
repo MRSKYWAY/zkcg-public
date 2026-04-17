@@ -1,10 +1,12 @@
 [package]
 name = "zkcg-common"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Shared types, errors, and utilities for the ZKCG protocol"
 license = "Apache-2.0"
-repository = "https://github.com/MRSKYWAY/zkcg-verifier"
+repository = "https://github.com/MRSKYWAY/ZKCG"
+homepage = "https://github.com/MRSKYWAY/ZKCG"
+documentation = "https://docs.rs/zkcg-common"
 keywords = ["zk", "zero-knowledge", "protocol", "cryptography"]
 categories = ["cryptography", "data-structures"]
 readme = "README.md"

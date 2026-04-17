@@ -1,25 +1,17 @@
 #![cfg(all(feature = "zk-halo2", feature = "zk-vm"))]
 
-use crate::{
-    backend_halo2::Halo2Backend,
-    engine::PublicInputs,
-};
-use crate::backend_zkvm::ZkVmBackend;
-use crate::backend::ProofBackend;
-use zkcg_common::errors::ProtocolError;
-use rand::rngs::OsRng;
+use crate::{Proof, ProofSystem, Verifier, engine::PublicInputs};
 use halo2_proofs::{
     circuit::Value,
-    plonk::{create_proof, keygen_pk, keygen_vk},
+    plonk::{VerifyingKey, create_proof, keygen_pk},
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
-use halo2_proofs::arithmetic::Field;
 use halo2curves::bn256::{Fr, G1Affine};
-use circuits::score_circuit::ScoreCircuit;
+use rand::rngs::OsRng;
+use zkcg_circuits::{halo2_artifacts::verifier_artifacts, score_circuit::ScoreCircuit};
+use zkcg_common::errors::ProtocolError;
 use zkcg_zkvm_host::prove;
-use zkcg_common::state::ProtocolState;
-/* ---------------- Expectations ---------------- */
 
 #[derive(Copy, Clone)]
 enum Expectation {
@@ -57,35 +49,31 @@ fn scenarios() -> Vec<TestScenario> {
     ]
 }
 
-/* ---------------- Helpers ---------------- */
-
-fn matches_expectation(
-    result: Result<(), ProtocolError>,
-    expected: Expectation,
-) -> bool {
+fn matches_expectation(result: Result<(), ProtocolError>, expected: Expectation) -> bool {
     match expected {
         Expectation::Accept => result.is_ok(),
         Expectation::Reject => result.is_err(),
     }
 }
 
-/* ---------------- Halo2 ---------------- */
-
-fn halo2_prove(score: u64, threshold: u64, params: &Params<G1Affine>) -> Vec<u8> {
+fn halo2_prove(
+    score: u64,
+    threshold: u64,
+    params: &Params<G1Affine>,
+    vk: &VerifyingKey<G1Affine>,
+) -> Proof {
     let circuit = ScoreCircuit::<Fr> {
         score: Value::known(Fr::from(score)),
         threshold: Value::known(Fr::from(threshold)),
     };
 
-    let vk = keygen_vk(params, &circuit).unwrap();
-    let pk = keygen_pk(params, vk, &circuit).unwrap();
+    let pk = keygen_pk(params, vk.clone(), &circuit).unwrap();
 
     let instances = vec![vec![Fr::from(threshold)]];
     let instance_refs: Vec<&[Fr]> = instances.iter().map(|v| v.as_slice()).collect();
     let all_instances = vec![instance_refs.as_slice()];
 
-    let mut transcript =
-        Blake2bWrite::<_, G1Affine, Challenge255<G1Affine>>::init(Vec::new());
+    let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<G1Affine>>::init(Vec::new());
 
     create_proof(
         params,
@@ -97,44 +85,14 @@ fn halo2_prove(score: u64, threshold: u64, params: &Params<G1Affine>) -> Vec<u8>
     )
     .unwrap();
 
-    transcript.finalize()
+    Proof::new(ProofSystem::Halo2, transcript.finalize())
 }
 
-fn halo2_backend() -> Halo2Backend {
-    let params = Params::new(9);
-    let dummy = ScoreCircuit::<Fr> {
-        score: Value::known(Fr::ZERO),
-        threshold: Value::known(Fr::ZERO),
-    };
-    let vk = keygen_vk(&params, &dummy).unwrap();
-    Halo2Backend { vk, params }
+fn zkvm_prove(score: u64, threshold: u64) -> Result<Proof, ProtocolError> {
+    prove(score, threshold, [0u8; 32], 1)
+        .map(|bytes| Proof::new(ProofSystem::ZkVm, bytes))
+        .map_err(|_| ProtocolError::InvalidProof)
 }
-
-// Consistent inputs (override genesis for matching)
-fn test_inputs() -> PublicInputs {
-    PublicInputs {
-        threshold: 10,
-        old_state_root: [0u8; 32], // Match genesis root for simplicity
-        nonce: 1, // state.nonce + 1
-    }
-}
-
-// Helper: Mock state to match inputs (avoids genesis mismatch)
-fn mock_state(inputs: &PublicInputs) -> ProtocolState {
-    ProtocolState {
-        state_root: inputs.old_state_root,
-        nonce: inputs.nonce - 1, // Pre-transition
-        ..ProtocolState::genesis()
-    }
-}
-/* ---------------- zkVM ---------------- */
-
-fn zkvm_prove(score: u64, threshold: u64) -> Result<Vec<u8>, ProtocolError> {
-    let inputs = test_inputs();
-    prove(score, threshold, inputs.old_state_root, inputs.nonce).map_err(|_| ProtocolError::InvalidProof)
-}
-
-/* ---------------- Rust baseline ---------------- */
 
 fn rust_only(score: u64, threshold: u64) -> Result<(), ProtocolError> {
     if score > threshold {
@@ -144,22 +102,15 @@ fn rust_only(score: u64, threshold: u64) -> Result<(), ProtocolError> {
     }
 }
 
-/* ---------------- Test ---------------- */
-
 #[test]
 fn cross_backend_equivalence() {
-    for s in scenarios() {
-        let inputs = PublicInputs {
-            threshold: s.threshold,
-            old_state_root: [0u8; 32],
-            nonce: 1,
-        };
+    let artifacts = verifier_artifacts();
 
-        // Halo2
-        let params = Params::new(9);
-        let halo2_proof = halo2_prove(s.score, s.threshold, &params);
-        let halo2 = halo2_backend();
-        let halo2_result = halo2.verify(&halo2_proof, &inputs);
+    for s in scenarios() {
+        let inputs = PublicInputs::phase1_score(s.threshold, [0u8; 32], 1);
+
+        let halo2_proof = halo2_prove(s.score, s.threshold, &artifacts.params, &artifacts.vk);
+        let halo2_result = Verifier::verify(&halo2_proof, &inputs);
 
         assert!(
             matches_expectation(halo2_result, s.expected),
@@ -167,10 +118,8 @@ fn cross_backend_equivalence() {
             s.desc
         );
 
-        // zkVM
-        let zkvm = ZkVmBackend;
-        let zkvm_result = zkvm_prove(s.score, s.threshold)
-            .and_then(|p| zkvm.verify(&p, &inputs));
+        let zkvm_result =
+            zkvm_prove(s.score, s.threshold).and_then(|proof| Verifier::verify(&proof, &inputs));
 
         assert!(
             matches_expectation(zkvm_result, s.expected),
@@ -178,14 +127,11 @@ fn cross_backend_equivalence() {
             s.desc
         );
 
-        // Rust-only baseline
         let rust_result = rust_only(s.score, s.threshold);
         assert!(
             matches_expectation(rust_result, s.expected),
             "Rust failed: {}",
             s.desc
         );
-
-        println!("✅ {}", s.desc);
     }
 }

@@ -4,77 +4,33 @@ use rand::rngs::OsRng;
 
 use halo2_proofs::{
     circuit::Value,
-    plonk::{create_proof, keygen_pk, keygen_vk},
+    plonk::{VerifyingKey, create_proof, keygen_pk},
     poly::commitment::Params,
-    transcript::{Blake2bWrite, Challenge255, TranscriptWrite},
+    transcript::{Blake2bWrite, Challenge255},
 };
-use halo2_proofs::arithmetic::Field;
 use halo2curves::bn256::{Fr, G1Affine};
 
-use circuits::score_circuit::ScoreCircuit;
-use crate::{
-    backend::ProofBackend,
-    backend_halo2::Halo2Backend,
-    engine::PublicInputs,
-};
+use crate::{Proof, ProofSystem, Verifier, engine::PublicInputs};
+use zkcg_circuits::{halo2_artifacts::verifier_artifacts, score_circuit::ScoreCircuit};
 
-/// Generate a valid Halo2 proof using fresh params
-fn generate_valid_proof(score: u64, threshold: u64) -> Vec<u8> {
-    let circuit = ScoreCircuit::<Fr> {
-        score: Value::known(Fr::from(score)),
-        threshold: Value::known(Fr::from(threshold)),
-    };
-
-    let k = 9;
-    let params: Params<G1Affine> = Params::new(k);
-
-    let vk = keygen_vk(&params, &circuit).unwrap();
-    let pk = keygen_pk(&params, vk, &circuit).unwrap();
-
-    let public_inputs = vec![vec![Fr::from(threshold)]];
-    let instance_slices: Vec<&[Fr]> =
-        public_inputs.iter().map(|v| v.as_slice()).collect();
-    let all_instances: Vec<&[&[Fr]]> =
-        vec![instance_slices.as_slice()];
-
-    let mut transcript =
-        Blake2bWrite::<_, G1Affine, Challenge255<G1Affine>>::init(Vec::new());
-
-    create_proof(
-        &params,
-        &pk,
-        &[circuit],
-        &all_instances,
-        OsRng,
-        &mut transcript,
-    )
-    .unwrap();
-
-    transcript.finalize()
-}
-
-/// Generate a valid Halo2 proof using caller-supplied params
 fn generate_valid_proof_with_params(
     score: u64,
     threshold: u64,
     params: &Params<G1Affine>,
-) -> Vec<u8> {
+    vk: &VerifyingKey<G1Affine>,
+) -> Proof {
     let circuit = ScoreCircuit::<Fr> {
         score: Value::known(Fr::from(score)),
         threshold: Value::known(Fr::from(threshold)),
     };
 
-    let vk = keygen_vk(params, &circuit).unwrap();
-    let pk = keygen_pk(params, vk, &circuit).unwrap();
+    let pk = keygen_pk(params, vk.clone(), &circuit).unwrap();
 
     let public_inputs = vec![vec![Fr::from(threshold)]];
-    let instance_slices: Vec<&[Fr]> =
-        public_inputs.iter().map(|v| v.as_slice()).collect();
-    let all_instances: Vec<&[&[Fr]]> =
-        vec![instance_slices.as_slice()];
+    let instance_slices: Vec<&[Fr]> = public_inputs.iter().map(|v| v.as_slice()).collect();
+    let all_instances: Vec<&[&[Fr]]> = vec![instance_slices.as_slice()];
 
-    let mut transcript =
-        Blake2bWrite::<_, G1Affine, Challenge255<G1Affine>>::init(Vec::new());
+    let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<G1Affine>>::init(Vec::new());
 
     create_proof(
         params,
@@ -86,84 +42,46 @@ fn generate_valid_proof_with_params(
     )
     .unwrap();
 
-    transcript.finalize()
-}
-
-/// Construct a Halo2 verifier backend from params
-fn backend(params: Params<G1Affine>) -> Halo2Backend {
-    let dummy = ScoreCircuit::<Fr> {
-        score: Value::known(Fr::ZERO),
-        threshold: Value::known(Fr::ZERO),
-    };
-
-    let vk = keygen_vk(&params, &dummy).unwrap();
-    Halo2Backend { vk, params }
+    Proof::new(ProofSystem::Halo2, transcript.finalize())
 }
 
 #[test]
 fn valid_halo2_proof_is_accepted() {
-    let k = 9;
-    let params: Params<G1Affine> = Params::new(k);
+    let artifacts = verifier_artifacts();
 
-    let proof = generate_valid_proof_with_params(39, 40, &params);
-    let backend = backend(params);
+    let proof = generate_valid_proof_with_params(39, 40, &artifacts.params, &artifacts.vk);
 
-    let inputs = PublicInputs {
-        threshold: 40,
-        old_state_root: [0u8; 32],
-        nonce: 1,
-    };
-    assert!(backend.verify(&proof, &inputs).is_ok());
+    let inputs = PublicInputs::phase1_score(40, [0u8; 32], 1);
+
+    assert!(Verifier::verify(&proof, &inputs).is_ok());
 }
 
 #[test]
 fn modified_proof_is_rejected() {
-    let k = 9;
-    let params: Params<G1Affine> = Params::new(k);
+    let artifacts = verifier_artifacts();
+    let mut proof = generate_valid_proof_with_params(39, 40, &artifacts.params, &artifacts.vk);
+    proof.data[10] ^= 0xFF;
 
-    let mut proof = generate_valid_proof_with_params(39, 40, &params);
-    proof[10] ^= 0xFF;
+    let inputs = PublicInputs::phase1_score(40, [0u8; 32], 1);
 
-    let backend = backend(params);
-
-    let inputs = PublicInputs {
-        threshold: 40,
-        old_state_root: [0u8; 32],
-        nonce: 1,
-    };
-
-    assert!(backend.verify(&proof, &inputs).is_err());
+    assert!(Verifier::verify(&proof, &inputs).is_err());
 }
 
 #[test]
 fn wrong_public_input_is_rejected() {
-    let k = 9;
-    let params: Params<G1Affine> = Params::new(k);
+    let artifacts = verifier_artifacts();
+    let proof = generate_valid_proof_with_params(39, 40, &artifacts.params, &artifacts.vk);
 
-    let proof = generate_valid_proof_with_params(39, 40, &params);
-    let backend = backend(params);
+    let wrong_inputs = PublicInputs::phase1_score(41, [0u8; 32], 1);
 
-    let wrong_inputs = PublicInputs {
-        threshold: 41, // WRONG
-        old_state_root: [0u8; 32],
-        nonce: 1,
-    };
-
-    assert!(backend.verify(&proof, &wrong_inputs).is_err());
+    assert!(Verifier::verify(&proof, &wrong_inputs).is_err());
 }
 
 #[test]
 fn empty_proof_is_rejected() {
-    let k = 9;
-    let params: Params<G1Affine> = Params::new(k);
+    let inputs = PublicInputs::phase1_score(40, [0u8; 32], 1);
 
-    let backend = backend(params);
+    let proof = Proof::new(ProofSystem::Halo2, Vec::<u8>::new());
 
-    let inputs = PublicInputs {
-        threshold: 40,
-        old_state_root: [0u8; 32],
-        nonce: 1,
-    };
-
-    assert!(backend.verify(&[], &inputs).is_err());
+    assert!(Verifier::verify(&proof, &inputs).is_err());
 }

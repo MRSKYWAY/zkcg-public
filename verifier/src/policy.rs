@@ -1,12 +1,11 @@
-use zkcg_common::errors::ProtocolError;
 use crate::engine::PublicInputs;
+use zkcg_common::errors::ProtocolError;
 
 pub fn enforce(inputs: &PublicInputs) -> Result<(), ProtocolError> {
-    // Phase 1: placeholder
-    // Real constraint will be enforced inside ZK proof later
-
-    if inputs.threshold == 0 {
-        return Err(ProtocolError::PolicyViolation);
+    if let Some(phase1) = inputs.phase1() {
+        if phase1.threshold == 0 {
+            return Err(ProtocolError::PolicyViolation);
+        }
     }
 
     Ok(())

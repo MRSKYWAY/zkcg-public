@@ -1,142 +1,148 @@
-# ZKCG Verifier
+# ZKCG — Proof-Backed RWA Compliance Gateway
 
-[![crates.io](https://img.shields.io/crates/v/zkcg-verifier.svg)](https://crates.io/crates/zkcg-verifier)
-[![crates.io](https://img.shields.io/crates/v/zkcg-common.svg)](https://crates.io/crates/zkcg-common)
+[![zkcg-verifier](https://img.shields.io/crates/v/zkcg-verifier.svg)](https://crates.io/crates/zkcg-verifier)
+[![zkcg-common](https://img.shields.io/crates/v/zkcg-common.svg)](https://crates.io/crates/zkcg-common)
+[![zkcg-halo2-prover](https://img.shields.io/crates/v/zkcg-halo2-prover.svg)](https://crates.io/crates/zkcg-halo2-prover)
+[![zkcg-zkvm-host](https://img.shields.io/crates/v/zkcg-zkvm-host.svg)](https://crates.io/crates/zkcg-zkvm-host)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-brightgreen)](https://github.com/sponsors/MRSKYWAY)
 
 ---
-# Important Notice: moved to complete Open Source Repo: https://github.com/MRSKYWAY/ZKCG
----
 # ZK-Verified Computation Gateway (ZKCG)
 
-**ZKCG enables non-ZK systems to replace trusted oracle logic with verifiable off-chain computation.**  
-Instead of relying on a trusted backend or oracle signer, consumers (on-chain contracts or off-chain services) can accept results *only if* a zero-knowledge proof of correct computation and policy compliance is provided.
+**ZKCG is the proof-backed compliance gateway for tokenized private credit.**  
+Use one hosted API to evaluate wallet onboarding and transfer eligibility off-chain, then enforce the result on-chain with signed attestations and auditable decision outputs.
 
-ZKCG is a protocol-first verification primitive — not a chain, not a zk-rollup, and not a signature oracle.  
-It is designed for systems that want **trustless decision gating** using provable off-chain logic.
+ZKCG is an **open-core verifier + hosted compliance gateway**.  
+The current product surface is optimized for issuer-facing RWA workflows that need replay-safe verification, stable API responses, public proof programs, signed on-chain settlement attestations, and a clean hosted deployment story.
 
 Learn more below 👇
 
-## Motivation
+## What ZKCG Ships Today
 
-In many systems today (DeFi risk checks, compliance gating, permissioned access), off-chain computation results are submitted on-chain or to services using trusted oracles or signed responses. This creates a trust assumption:
+Primary workflows:
 
-- Contracts must trust an oracle identity  
-- Backends must be trusted not to lie  
-- Private data often must be revealed for validation
+- wallet onboarding eligibility
+- transfer approval for tokenized credit assets
+- issuer-scoped audit export
+- signed on-chain settlement attestation
 
-ZKCG replaces this with **verifiable computation** — results accepted only if a zero-knowledge proof of correct execution *plus policy compliance* is provided.  
-This eliminates the need for trust in a specific oracle signer and enables stronger guarantees for privacy and correctness.
+Primary buyer:
 
-## What ZKCG Replaces
+- issuer
+- fund admin
+- transfer agent
+- tokenization platform
 
-Many systems today rely on trusted oracle services or backend signers to bring
-off-chain computation results on-chain or into critical decision paths.
+Technical integrator:
 
-ZKCG replaces **trust in the computation provider** with **verifiable computation**.
+- backend engineer
+- platform engineer
+- smart-contract engineer consuming settlement attestations
 
-| Today (Common Pattern) | With ZKCG |
-|------------------------|-----------|
-| Trusted oracle signer  | Zero-knowledge proof |
-| Off-chain trust        | Cryptographic verification |
-| Backend promises       | Enforced protocol policy |
-| Revealed inputs        | Private inputs (ZK) |
-| Ad-hoc validation      | Deterministic state transitions |
+## Current Trust Model
 
-Instead of trusting *who* produced a result, consumers verify *how* it was produced.
+ZKCG is **not** a blanket “trustless everything” system today.
+
+What is public and proof-backed:
+
+- public proof programs for `phase1.score.v1`
+- public proof programs for `rwa.credit.onboarding.v1`
+- public proof programs for `rwa.credit.transfer.v1`
+- public verifier logic for Halo2 and zkVM
+- public replay/state/attestation binding logic
+
+What the proofs cover:
+
+- deterministic policy evaluation over **normalized facts**
+- stable decision outputs such as `decision`, `eligibility_class`, and `reason_bits`
+
+What the proofs do **not** cover today:
+
+- raw upstream KYC / AML / accreditation evidence truth
+- allowlist / blocklist resolution inside the proof
+- native backend-specific on-chain proof verification
+
+Current on-chain settlement is **attestation-backed**:
+
+- ZKCG produces a proof-backed decision off-chain
+- the API signs a contract-ready attestation for that decision
+- contracts consume `verifyZKCG(proof, publicInputs)` plus the bound payload hash
 
 ## Overview
 
-**ZKCG Verifier** is the public, auditable verification layer of the ZKCG protocol.
- 
-* **Phase 1**: Halo2-based zk-SNARK verification
-* **Phase 2**: zkVM-based verification (RISC0)
+**ZKCG Verifier** is the public verification layer underneath the hosted compliance gateway.
 
-This repository is intentionally **verifier-only**.
-Anyone can independently verify proofs, audit the logic, and run verifier nodes.
+* **Published proof programs**: phase-1 score checks plus RWA onboarding and transfer evaluation over normalized facts
+* **Backends**: Halo2 and zkVM (RISC0), with Halo2 also powering self-hosted bulk payout release gating
+
+This repository ships the open-core verifier, the zkVM/Halo2 adapters, the Solidity settlement interface, and a reference API for proof-backed RWA compliance decisions.
+Anyone can independently verify proofs, audit the logic, run the API locally, and self-host the protocol-facing endpoints.
 
 ---
 ## High-Level Architecture
 
-Modern systems often rely on oracles or trusted services to bring off-chain results on-chain or into backend logic. ZKCG replaces those with verifiable proofs.
-
-Here’s how a typical integration looks:
+Here’s the primary product flow:
 
 ```
-Off-chain computation
+Issuer / admin policy inputs
         ↓
-   ZK proof generation
+Normalized facts + policy evaluation
         ↓
-   ZKCG Verifier
- (policy + proof check)
+Public proof program (Halo2 / zkVM)
         ↓
-Verified result consumed
-(smart contract or service)
+Hosted API decision + audit record
+        ↓
+Signed on-chain attestation
+        ↓
+Settlement contract / service consumer
 ```
 
-- The prover executes private logic off-chain and outputs a proof + public result.
-- The verifier checks both **correct computation** and **policy compliance**.
-- No trusted signer or back-end oracle identity is required.
+- The proof program checks deterministic policy evaluation over normalized facts.
+- The API returns stable machine-readable decision outputs.
+- The current settlement path uses signed attestations that bind the on-chain action to the decision.
 
 ---
 
-## Example Integration: Oracle Replacement
+## Why Teams Use ZKCG
 
-Instead of:
+Teams evaluating tokenized private credit and permissioned RWA flows usually need:
 
-```solidity
-// Trusted oracle pattern
-require(msg.sender == trustedOracle);
-price = oraclePrice;
-```
+- reusable onboarding and transfer decisions
+- issuer-scoped audit history
+- replay-safe settlement approvals
+- public proof logic for the decision semantics
+- an integration surface simple enough for contracts and backend systems
 
-You can do:
+ZKCG is designed for that exact operating model.
 
-```solidity
-// Verifiable off-chain computation
-require(verifyZKCG(proof, publicInputs));
-price = publicInputs.price;
-```
+## Secondary Examples
 
-With ZKCG, the contract accepts the result only if a proof of correct computation
-and policy compliance is provided — no need to trust a specific oracle address.
+The repo also includes secondary examples that reuse the same verifier and settlement shape:
 
----
-
-## Who Should Use ZKCG
-
-ZKCG is built for systems that currently rely on externally computed results where:
-
-- Trusting a specific oracle signer is undesirable
-- Privacy of inputs must be preserved
-- Proof of correct logic matters
-- Existing systems already rely on oracles or trusted backends
-
-Typical adopters include:
-
-- On-chain protocols replacing oracle signatures
-- Off-chain services needing strong correctness guarantees
-- Compliance and eligibility systems
-- Risk-based access gating
+- private loan eligibility
+- risk-gated vaults
+- oracle sanity checks
+- zkMe credential-to-policy bridge demo
 
 ---
 
-## Use Case (Phase 1): Private Eligibility Check
+## Canonical Product Example
 
-A common pattern across many systems is:
+The canonical end-to-end flow in this repo is:
 
-> “Can this user or entity execute some action *only if* their private data satisfies a condition?”
+- `POST /v1/rwa/onboarding/evaluate`
+- `POST /v1/rwa/transfer/evaluate`
+- `POST /v1/rwa/transfer/attest`
+- `GET /v1/rwa/audit/export`
 
-Examples include:
+See [api/examples/rwa_credit_workflow.md](https://github.com/MRSKYWAY/ZKCG/blob/main/api/examples/rwa_credit_workflow.md) for the full walkthrough.
 
-- Credit score ≥ threshold
-- Age ≥ 18
-- Compliance metric below risk limit
-- Private reputation above requirement
+For the zkMe partner-stack bridge, see [docs/zkme_zkcg_integration.md](/home/skye/ZKCG/docs/zkme_zkcg_integration.md) and run:
 
-ZKCG enables these decisions to be verified **without revealing private inputs**
-and **without trusting an oracle signer**.
+```bash
+bash scripts/demo_zkme_zkcg_fullstack.sh
+```
 
 ---
 
@@ -144,10 +150,15 @@ and **without trusting an oracle signer**.
 ## Repository Structure
 
 ```text
-zkcg-verifier/
+ZKCG/
 ├── common/         # Shared types, errors, and protocol utilities (zkcg-common crate)
+├── circuits/       # Public Halo2 circuit definitions and verifier artifacts
+├── halo2/prover/   # Public Halo2 proving crate
+├── payout/worker/  # Self-hosted payout worker / CLI for bulk release gating
 ├── verifier/       # Core verifier logic (zkcg-verifier crate)
-├── api/            # HTTP API for proof submission
+├── api/            # Hosted/reference API for RWA onboarding, transfer approval, and secondary examples
+├── contracts/      # Solidity verifier + consumer examples
+├── docs/           # Product, market, and security-adjacent docs
 ├── SPEC.md         # Full protocol specification
 ├── CORE_FREEZE.md  # Frozen circuit parameters and commitments
 ├── SECURITY.md     # Security assumptions and reporting
@@ -169,22 +180,157 @@ Or manually in `Cargo.toml`:
 
 ```toml
 [dependencies]
-zkcg-verifier = "0.1.0"
-zkcg-common   = "0.1.0"
+zkcg-verifier = "0.2.0"
+zkcg-common   = "0.2.0"
 ```
 
 ---
+## 🚀 Prover Crate (Now on crates.io!)
+
+```toml
+zkcg-halo2-prover = "0.2.0"
+```
+Generate Halo2 proofs locally in one line:
+
+```Rust
+use zkcg_halo2_prover::{generate_proof, proving_backend_name};
+
+let proof = generate_proof(35, 40)?;   // score <= threshold
+println!("backend = {}", proving_backend_name());
+
+println!("✅ Proof generated! Size: {} bytes", proof.len());
+``` 
+For repeated proofs, cache the proving context instead of rebuilding params and
+keys on every call:
+
+```rust
+use zkcg_halo2_prover::{DEFAULT_K, Halo2ProverContext, proving_backend_name};
+
+let context = Halo2ProverContext::new(DEFAULT_K)?;
+
+let proof_a = context.prove(35, 40)?;
+let proof_b = context.prove(55, 60)?;
+
+println!("backend = {}", proving_backend_name());
+println!("proof sizes = {}, {}", proof_a.len(), proof_b.len());
+```
+
+Full docs → https://docs.rs/zkcg-halo2-prover
+
+Public prover source → https://github.com/MRSKYWAY/ZKCG/tree/main/halo2/prover
+Public circuits → https://github.com/MRSKYWAY/ZKCG/tree/main/circuits
+Cached-context example → `halo2/prover/examples/reuse_context.rs`
+
+Want hosted proving, custom circuits, or SLA? → GitHub Sponsors or DM me!
+
+GPU build path:
+
+```bash
+cargo +nightly run -p zkcg-halo2-prover --no-default-features --features icicle-gpu
+```
+
+This requires a CUDA-capable environment with `nvcc` available during build.
+If CUDA is installed in a non-default location, set `CUDAToolkit_ROOT` before
+building.
+
+Dead-simple GPU smoke check:
+
+```bash
+make gpu-check
+```
+
+## Throughput-Focused Payout Backend
+
+ZKCG now ships a specialized Halo2 chunked payout backend for self-hosted bulk payout rounds.
+
+- prover module: [halo2/prover/src/payout.rs](/home/skye/ZKCG/halo2/prover/src/payout.rs)
+- worker CLI: [payout/worker/README.md](/home/skye/ZKCG/payout/worker/README.md)
+- bench mode: `bash ./scripts/bench.sh halo2-payout`
+- demo script: `bash ./scripts/demo_bulk_payout_round.sh`
+
+This backend is intended for frozen payout rounds and off-chain release gating. It runs on the standard Halo2 prover path and shares the same modular proving surface as the rest of the public Halo2 backend.
+
+The current Halo2 payout path uses:
+
+- fixed-size chunk proofs over payout rows
+- a serialized payout proof bundle containing the chunk proofs plus the released rows
+- verifier-side recomputation of manifest, totals, caps, and release-window policy checks
+
+The default benchmark mode focuses on 128, 256, and 1024 row Halo2 chunk proving. Use the `prove_chunked_round` example for 1k and 10k end-to-end payout round measurements.
+
+## Public Circuits
+
+The proving circuits used by the public Halo2 path are **in this repository**.
+
+Primary circuit paths:
+
+- [circuits/src/score_circuit.rs](/home/skye/ZKCG/circuits/src/score_circuit.rs)
+- [circuits/src/rwa_circuit.rs](/home/skye/ZKCG/circuits/src/rwa_circuit.rs)
+- [circuits/src/halo2_artifacts.rs](/home/skye/ZKCG/circuits/src/halo2_artifacts.rs)
+- [halo2/prover/src/lib.rs](/home/skye/ZKCG/halo2/prover/src/lib.rs)
+- [verifier/src/adapters/halo2.rs](/home/skye/ZKCG/verifier/src/adapters/halo2.rs)
+
+If someone concluded the circuits were private, that is a documentation failure, not the actual repo state.
+
+## Proof Scope Today
+
+ZKCG should be evaluated based on what is publicly proven today, not on the broadest product framing.
+
+Current public proof scope:
+
+- The public Halo2 path proves:
+  - `score <= threshold`
+  - `rwa.credit.onboarding.v1`
+  - `rwa.credit.transfer.v1`
+- The zkVM path proves the same public claims through the published guest logic plus receipt/journal binding.
+- Replay protection, state binding, and attestation binding are public and auditable in the verifier/API/contracts code.
+
+What is **not** true today:
+
+- The system does **not** prove raw upstream KYC/AML/accreditation evidence truth.
+- The system does **not** prove allowlist/blocklist resolution or generic policy-DSL execution inside the proof.
+- The current RWA proof programs prove deterministic evaluation over normalized booleans, enums, identifiers, and numeric limits.
+
+The correct current framing is:
+
+- public verifier + public circuits/guest logic for the shipped score and RWA workflows
+- proof-backed policy evaluation over normalized facts
+- hosted attestation plumbing for on-chain settlement
 
 ## Features
 
 * `zk-halo2` — Enable Halo2 proof verification backend
+* `zk-halo2-kzg` — Enable the nightly-only KZG verifier for ICICLE / zkonduit Halo2 proofs
 * `zk-vm` — Enable zkVM (RISC0) verification support
 
 Example:
 
 ```toml
-zkcg-verifier = { version = "0.1.0", features = ["zk-halo2"] }
+zkcg-verifier = { version = "0.2.0", features = ["zk-halo2"] }
 ```
+
+To accept both the stable CPU Halo2 proofs and the nightly KZG / ICICLE Halo2
+proofs through the same `ProofSystem::Halo2` entrypoint:
+
+```toml
+zkcg-verifier = { version = "0.2.0", features = ["zk-halo2", "zk-halo2-kzg"] }
+```
+
+## Setup Assumptions
+
+The setup story depends on the backend you enable.
+
+- `zk-vm`:
+  - Soundness depends on the published guest program and receipt verification path.
+- `zk-halo2`:
+  - Soundness depends on the published Halo2 circuit and verifier artifact generation in the repo.
+  - The repo currently generates bundled verifier artifacts from the public circuit at runtime.
+- `zk-halo2-kzg`:
+  - This is the explicit KZG path.
+  - It carries a trusted-setup assumption and should be described that way.
+  - If you market this backend, document the setup provenance explicitly.
+
+So the product should not use “trustless” as a blanket statement across all backends and workflows without qualification.
 
 ---
 
@@ -218,7 +364,43 @@ docker --version
 From the repository root:
 
 ```bash
-docker build -t zkcg-verifier .
+docker build -t zkcg-api .
+```
+
+### Run The Revenue-First API
+
+The primary product-facing endpoints in `v0.2.0` are:
+
+- `/v1/rwa/onboarding/evaluate`
+- `/v1/rwa/transfer/evaluate`
+
+The lower-level `/v1/submit-proof` endpoint remains available for protocol/state transitions, and `/v1/compliance/evaluate` stays available as a secondary compatibility example.
+
+Run locally with persistent state:
+
+```bash
+ZKCG_ENABLE_PROTOCOL=1 \
+ZKCG_STATE_BACKEND=sqlite \
+ZKCG_STATE_PATH=./data/protocol-state.db \
+cargo run -p api --features "zk-halo2 zk-vm"
+```
+
+Run with Docker and a mounted state volume:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -v "$(pwd)/data:/data" \
+  zkcg-api
+```
+
+For hosted reference deployments, the root `Dockerfile` is suitable for Railway-style container deploys and persists protocol state through `ZKCG_STATE_PATH`.
+
+Operational checks:
+
+```bash
+curl -sS http://127.0.0.1:8080/healthz
+curl -sS http://127.0.0.1:8080/v1/protocol/state
+./scripts/smoke_api.sh
 ```
 
 
@@ -234,13 +416,24 @@ docker build -t zkcg-verifier .
 
 ---
 
-### Halo2 (BN254, k = 9)
+### Halo2 (BN254, k = 6)
 
 **Use case:** Interactive / near-real-time ZK policy verification
 
-* **Prove:** ~306–316 ms
-* **Verify:** ~9–10 ms
-* **End-to-End:** ~317–351 ms
+Current measured paths on this machine:
+
+* **Verify (stable CPU verifier bench):** ~`4.22–4.58 ms`
+* **Prove, cached context (stable CPU):** ~`75.98–77.29 ms`
+* **Prove, cached context (ICICLE GPU):** ~`68.07–71.24 ms`
+* **Prove, one-shot API (stable CPU):** ~`112.87–114.19 ms`
+* **Prove, one-shot API (ICICLE GPU):** ~`105.29–106.93 ms`
+* **Setup only (CPU / GPU):** ~`36.80–37.23 ms` / `33.40–35.62 ms`
+
+Interpretation:
+
+* The old `~75–80 ms` Halo2 prove number still holds on the cached-context path.
+* The higher `~106–114 ms` numbers include one-shot setup (`params`, `vk`, `pk`) on every call.
+* On this WSL2 + GTX 1650 Ti setup, ICICLE improves the cached-context proving path by about `9%` versus CPU.
 
 ---
 
@@ -257,29 +450,35 @@ docker build -t zkcg-verifier .
 
 | Backend | Prove Time | Verify Time | Intended Use            |
 | ------- | ---------- | ----------- | ----------------------- |
-| Halo2   | ~310 ms    | ~9 ms       | Interactive ZK policies |
+| Halo2 (cached CPU) | ~76.6 ms | ~4.38 ms | Interactive ZK policies |
+| Halo2 (cached GPU) | ~69.6 ms | n/a | Interactive ZK policies |
 | zkVM    | ~13–17 s   | ~40 ns      | Audit / attestation     |
 
 ---
 
-<!-- ## 🧪 Running Benchmarks
+## 🧪 Running Benchmarks
 
-### Without Docker
-
-```bash
-cargo bench --bench halo2_prove
-cargo bench --bench halo2_verify
-cargo bench --bench halo2_prove_and_verify
-```
-
-### With Docker
+Stable CPU verifier + prover benchmarks:
 
 ```bash
-docker run --rm zkcg-verifier cargo bench --bench zkvm_prove
-docker run --rm zkcg-verifier cargo bench --bench zkvm_verify
+bash ./scripts/bench.sh halo2
+bash ./scripts/bench.sh halo2-cpu
 ```
 
---- -->
+Nightly ICICLE GPU prover benchmark:
+
+```bash
+bash ./scripts/bench.sh halo2-gpu
+```
+
+zkVM verifier benchmark:
+
+```bash
+bash ./scripts/bench.sh zkvm
+```
+
+`halo2-gpu` requires a CUDA-capable environment plus the nightly toolchain.
+
 ### End-to-End Simulation Results
 
 #### Sequential Halo2 Simulation (1000 proofs)
@@ -318,17 +517,49 @@ Throughput:    ~7.5 TPS
 
 ---
 
-## Real-World Integration Example
+## Revenue-First Product Surface
 
-ZKCG can be integrated into DeFi protocols for privacy-preserving verifications (e.g., credit score checks without revealing scores). See this demo in the [collateral_vault repository](https://github.com/MRSKYWAY/collateral_vault/blob/master/scripts/collateral_demo.ts), which shows the full on-chain + off-chain pipeline:
+The current `v0.2.0` surface is intentionally narrower than a generic “all of ZK” platform.
+It is built to help close paid pilots around proof-backed business decisions.
 
-- **Off-Chain Proof Generation**: Generate a ZK proof using ZKCG's prover (Halo2 or zkVM) for conditions like "credit score > threshold".
-- **Off-Chain Verification**: Call ZKCG's API (/v1/submit-proof) to verify the proof trustlessly.
-- **On-Chain Settlement**: If verified, anchor the new state commitment on-chain (Solana program in collateral_vault) to approve loans or unlock collateral.
+Flagship flow:
+- RWA credit onboarding and transfer approval through `/v1/rwa/onboarding/evaluate` and `/v1/rwa/transfer/evaluate`
+- Stable decision envelope with `decision_id`, `decision`, `policy_version`, `proof_system`, machine-readable `reason_codes`, human-readable `reasons`, and proof artifacts
+- [RWA credit workflow walkthrough](./api/examples/rwa_credit_workflow.md)
+- [RWA go-to-market brief](./docs/rwa_go_to_market.md)
 
-Run the demo: `ts-node collateral_demo.ts` (requires ZKCG API running locally).
+Secondary template:
+- Legacy lending/compliance compatibility flow through `/v1/compliance/evaluate`
+- [Private lending pilot walkthrough](./api/examples/private_lending_pilot.md)
+- Risk-gated vault or oracle replacement flows that reuse the same decision + verification pattern
+- [Risk-gated vault example](./api/examples/risk_gated_vault.md)
+- [On-chain settlement example](./api/examples/on_chain_settlement.md)
+- [Contract examples and adoption path](./contracts/README.md)
+- [RwaTransferGate.sol](./contracts/examples/RwaTransferGate.sol)
+- [PrivateLoanEligibilityGate.sol](./contracts/examples/PrivateLoanEligibilityGate.sol)
+- [RiskGatedVault.sol](./contracts/examples/RiskGatedVault.sol)
+- [VerifiableOracleWithPolicy.sol](./contracts/examples/VerifiableOracleWithPolicy.sol)
 
-This pipeline ensures fast off-chain processing (~340ms E2E for Halo2) with on-chain immutability.
+Contract-ready attestation endpoints:
+- `POST /v1/rwa/onboarding/attest`
+- `POST /v1/rwa/transfer/attest`
+- `POST /v1/onchain/private-loan-eligibility/attest`
+- `POST /v1/onchain/risk-gated-vault/attest`
+- `POST /v1/onchain/verifiable-oracle/attest`
+- Requires `ZKCG_ATTESTATION_PRIVATE_KEY` in the API environment
+
+Dead-simple local on-chain flow:
+
+```bash
+make onchain-test
+make onchain-demo
+make onchain-rwa-demo
+```
+
+The existing verifier examples remain useful for backend benchmarking and protocol evaluation:
+- [Halo2 lending simulation](./verifier/examples/de_fi_lending_sim.rs)
+- [Parallel Halo2 lending simulation](./verifier/examples/de_fi_lending_sim_parallel.rs)
+- [zkVM lending simulation](./verifier/examples/zkvm_lending_sim.rs)
 
 ## Live Demo API (Stateless)
 
@@ -339,7 +570,7 @@ The ZKCG verifier exposes **demo-only, stateless endpoints** that allow anyone t
 
 **Base URL**
 ```
-https://zkcg-production.up.railway.app
+https://zkcg.onrender.com
 ```
 
 ---
@@ -351,7 +582,7 @@ Generate a zero-knowledge proof that a `score` satisfies a given `threshold`.
 ### Request
 
 ```bash
-curl -X POST https://zkcg-production.up.railway.app/demo/prove \
+curl -X POST https://zkcg.onrender.com/demo/prove \
   -H "Content-Type: application/json" \
   -d '{
     "score": 90,
@@ -382,9 +613,10 @@ Verify a previously generated proof against a threshold.
 ### Request
 
 ```bash
-curl -X POST https://zkcg-production.up.railway.app/demo/verify \
+curl -X POST https://zkcg.onrender.com/demo/verify \
   -H "Content-Type: application/json" \
   -d '{
+    "system": "halo2",
     "proof": "<YOUR_PROOF>",
     "threshold": 100
   }'
@@ -398,15 +630,65 @@ curl -X POST https://zkcg-production.up.railway.app/demo/verify \
 }
 ```
 
+## 3️⃣ Verify Proofs In Batch (`/demo/verify-batch`)
 
-## Proof-Based Compliance Evaluation API (For Sponsers Only)
+Verify multiple independent proofs in one request.
 
-This endpoint exposes a **deterministic, proof-backed compliance oracle**.  
-It evaluates a predefined policy over supplied inputs and returns:
+### Request
 
-- The policy decision
-- The reasons for failure (if any)
-- A cryptographic proof that the policy was evaluated correctly
+```bash
+curl -X POST https://zkcg.onrender.com/demo/verify-batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "proofs": [
+      {
+        "system": "halo2",
+        "proof": "<PROOF_ONE>",
+        "threshold": 100
+      },
+      {
+        "system": "halo2",
+        "proof": "<PROOF_TWO>",
+        "threshold": 100
+      }
+    ]
+  }'
+```
+
+### Response
+
+```json
+{
+  "verified": false,
+  "total": 2,
+  "results": [
+    {
+      "verified": true
+    },
+    {
+      "verified": false,
+      "error": "proof verification failed"
+    }
+  ]
+}
+```
+
+Response notes:
+- the hosted Render deployment currently uses `halo2` for the public stateless demo endpoints
+- `system: "zkvm"` remains supported in local or dual-backend deployments, but is not the default for the hosted API
+
+
+## RWA Credit Compliance API
+
+These endpoints are the primary product-facing API in `v0.2.0`.
+They expose a **deterministic, proof-backed onboarding and transfer decision engine** for tokenized credit issuers, fund admins, and transfer agents.  
+They evaluate predefined issuer-side policy logic over supplied claims and return:
+
+- The normalized decision envelope
+- Stable machine-readable `reason_codes`
+- Human-readable reasons for failure (if any)
+- The proof system used for the artifact
+- A cryptographic proof artifact when one is available
 
 ⚠️ **Important**  
 This service does **not** source data, perform KYC, or assess fraud.  
@@ -414,96 +696,148 @@ It proves *correct execution of policy logic* over caller-supplied claims.
 
 ---
 
-### Endpoint
+### Primary Endpoints
+
+```
+POST /v1/rwa/onboarding/evaluate
+POST /v1/rwa/onboarding/attest
+POST /v1/rwa/transfer/evaluate
+POST /v1/rwa/transfer/attest
+GET  /v1/rwa/policies
+GET  /v1/rwa/decisions/{decision_id}?issuer_id=...
+GET  /v1/rwa/audit/export?issuer_id=...&format=json|csv
+```
+
+Admin-only controls when `ZKCG_ADMIN_TOKEN` is configured:
+
+```
+POST /v1/rwa/policies/{policy_version}/status
+POST /v1/rwa/revocations
+```
+
+Secondary compatibility endpoint:
 
 ```
 POST /v1/compliance/evaluate
 Content-Type: application/json
 ```
 
----
+Operational state endpoint:
 
-### Request Schema
+```
+GET /v1/protocol/state
+```
 
-```json
-{
-  "applicant_id": "string",
-  "risk_score": "number (0–100)",
-  "threshold": "number (0–100)",
-  "monthly_income_cents": "number (> 0)",
-  "monthly_debt_cents": "number (>= 0)",
-  "requested_credit_cents": "number (>= 0)"
-}
+Additional protocol-facing verification endpoint:
+
+```
+POST /v1/verify-batch
+Content-Type: application/json
+```
+
+Lower-level state transition endpoint:
+
+```
+POST /v1/submit-proof
+Content-Type: application/json
 ```
 
 ---
 
-### Field Semantics
+### RWA Onboarding Request Schema
 
-| Field | Description |
-|-----|------------|
-| `applicant_id` | Caller-defined identifier for the subject being evaluated |
-| `risk_score` | Precomputed risk score supplied by the caller |
-| `threshold` | Maximum acceptable risk score |
-| `monthly_income_cents` | Claimed monthly income (in cents) |
-| `monthly_debt_cents` | Claimed monthly debt obligations (in cents) |
-| `requested_credit_cents` | Credit amount being evaluated (in cents) |
+```json
+{
+  "issuer_id": "string",
+  "asset_id": "string",
+  "wallet_address": "0x-address",
+  "investor_type": "string",
+  "accredited": "boolean",
+  "kyc_passed": "boolean",
+  "aml_cleared": "boolean",
+  "sanctions_clear": "boolean",
+  "jurisdiction": "string",
+  "allowed_jurisdictions": ["string"],
+  "blocked_jurisdictions": ["string"],
+  "residency_allowed": "boolean",
+  "expires_at": "unix timestamp"
+}
+```
 
-All numeric values are treated as **claims** and are not independently verified.
-
----
-
-### Deterministic Policy Rules
-
-The following rules are evaluated:
-
-1. **Risk Score Policy**
-   ```
-   risk_score ≤ threshold
-   ```
-
-2. **Debt-to-Income (DTI) Policy**
-   ```
-   (monthly_debt / monthly_income) ≤ 45%
-   ```
-
-3. **Credit-to-Income Policy**
-   ```
-   (requested_credit / monthly_income) ≤ 300%
-   ```
-
-All calculations use **fixed-point basis points (bps)** for deterministic execution.
-
----
-
-### Example Request
+Hosted example:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8080/v1/compliance/evaluate \
-  -H 'content-type: application/json' \
+curl -X POST https://zkcg.onrender.com/v1/rwa/onboarding/evaluate \
+  -H "Content-Type: application/json" \
   -d '{
-    "applicant_id":"cust_001",
-    "risk_score":35,
-    "threshold":50,
-    "monthly_income_cents":500000,
-    "monthly_debt_cents":150000,
-    "requested_credit_cents":1000000
+    "issuer_id":"issuer-a",
+    "asset_id":"credit-fund-a",
+    "wallet_address":"0x1111111111111111111111111111111111111111",
+    "investor_type":"individual",
+    "accredited":true,
+    "kyc_passed":true,
+    "aml_cleared":true,
+    "sanctions_clear":true,
+    "jurisdiction":"US",
+    "allowed_jurisdictions":["US"],
+    "blocked_jurisdictions":[],
+    "residency_allowed":true,
+    "expires_at":1900000000
   }'
 ```
 
 ---
 
-### Example Response
+### Example Onboarding Response
 
 ```json
 {
-  "application_id": "cust_001-35",
-  "decision": "approved",
+  "decision_id": "rwa:onboarding:issuer-a:credit-fund-a:0x1111111111111111111111111111111111111111",
+  "decision": "eligible",
   "policy_passed": true,
-  "risk_band": "medium",
-  "reasons": [],
+  "policy_version": "rwa.credit.onboarding.v1",
   "proof_verified": true,
-  "proof": "<PROOF>"
+  "proof_system": "halo2",
+  "reason_bits": 0,
+  "reason_codes": [],
+  "reasons": [],
+  "expires_at": 1900000000,
+  "issuer_id": "issuer-a",
+  "asset_id": "credit-fund-a",
+  "wallet_address": "0x1111111111111111111111111111111111111111",
+  "eligibility_class": "accredited",
+  "claims_hash": "0x9225753f5f6eee2916816ae8d6da957ff65e0e6c7594fc2d991cca1ef65d23e7",
+  "decision_commitment_hash": "0xddaea2fabbe9a3adc9a4d60e039cd097fbb74b3008c661ceaceb09902c96ef81",
+  "proof_artifact": "<BASE64_PROOF>"
+}
+```
+
+Response notes:
+- `decision_id` is the stable caller-facing identifier for the evaluated decision
+- `policy_version` is fixed to `rwa.credit.onboarding.v1` or `rwa.credit.transfer.v1`
+- the hosted API currently uses `halo2` as the default proving backend
+- `reason_bits` is the canonical machine-readable bitset for the decision result
+- `claims_hash` and `decision_commitment_hash` are the canonical hashes bound into the attestation and contract-consumption flow
+- `reason_codes` are the stable machine-readable integration contract
+- `proof_artifact` may be empty when a decision is denied before a proof artifact is produced
+
+### Health Check
+
+```json
+{
+  "status": "ok",
+  "policy_version": "rwa.credit.onboarding.v1",
+  "state_backend": "sqlite"
+}
+```
+
+### Protocol State Example
+
+```json
+{
+  "state_root": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  "nonce": 0,
+  "epoch": 0
 }
 ```
 
@@ -529,7 +863,6 @@ The proof does **not** guarantee:
 These are intentionally out of scope.
 
 
----
 
 ## Notes
 
@@ -541,7 +874,7 @@ These are intentionally out of scope.
   - understanding the proof flow
 - Production / protocol endpoints are gated separately
 
----
+
 
 ## What This Demonstrates
 
@@ -550,33 +883,37 @@ These are intentionally out of scope.
 - Deterministic verification
 - Clean HTTP boundary for ZK systems
 
+## Version
+
+Current stable release: **v0.2.0**
+
+Features:
+- Halo2 proving and verification
+- zkVM proof generation and verification
+- Universal verifier and public adapter registry
+- Persistent protocol-state API
+- Lending/compliance decision API
+- Batch verification with per-item results
+- Lending simulation examples
+- Benchmarks
+
+v0.2.0 includes:
+- universal verifier architecture
+- hardened zkVM receipt verification
+- sequential and parallel batch verification
+- per-proof batch API results
+- public verifier registry for custom adapters
 
 ## Contact
 
 For questions, collaborations, or sponsorships, reach out:
 - X (Twitter): [@sujyot]([https://x.com/sujyot](https://x.com/Sujyot10))
-- GitHub Issues: Open in this repo for verifier discussions, or in [ZKCG private repo](https://github.com/MRSKYWAY/ZKCG) for prover/circuits.
+- GitHub Issues: Open in this repo for discussions
 
 ---
 
-## Important: Public Verifier Only
 
-This repository contains **only public components**:
-
-* Verification logic
-* Shared protocol types and errors
-* API interfaces
-* Frozen parameters and specifications
-
-The following are **intentionally excluded**:
-
-* Proving circuits
-* Proof generation code
-* zkVM guest programs
-
-Those components are maintained in a **private repository** while the project is developed by a solo maintainer.
-
-Anyone can:
+#### Anyone can:
 
 * Audit the verifier
 * Run a verifier node
@@ -597,11 +934,5 @@ Apache-2.0
 ZKCG is built and maintained by a single developer.
 
 👉 Sponsor: [https://github.com/sponsors/MRSKYWAY](https://github.com/sponsors/MRSKYWAY)
-
-
-
-
-
-
 
 

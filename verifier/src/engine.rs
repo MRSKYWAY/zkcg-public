@@ -1,10 +1,10 @@
+use crate::backend::ProofBackend;
+use crate::policy;
 use zkcg_common::{
     errors::ProtocolError,
     state::ProtocolState,
-    types::Commitment,
+    types::{Commitment, ProofClaims},
 };
-use crate::backend::ProofBackend;
-use crate::policy;
 
 pub struct VerifierEngine {
     state: ProtocolState,
@@ -12,17 +12,13 @@ pub struct VerifierEngine {
 }
 
 impl VerifierEngine {
-    pub fn new(
-        state: ProtocolState,
-        backend: Box<dyn ProofBackend>,
-    ) -> Self {
+    pub fn new(state: ProtocolState, backend: Box<dyn ProofBackend>) -> Self {
         Self { state, backend }
     }
-    
+
     pub fn state(&self) -> &ProtocolState {
         &self.state
     }
-
 
     pub fn process_transition(
         &mut self,
@@ -30,20 +26,20 @@ impl VerifierEngine {
         public_inputs: PublicInputs,
         commitment: Commitment,
     ) -> Result<(), ProtocolError> {
+        let phase1 = public_inputs.phase1().ok_or(ProtocolError::InvalidFormat)?;
+
         // 1. Check state root
-        if public_inputs.old_state_root != self.state.state_root {
+        if phase1.old_state_root != self.state.state_root {
             return Err(ProtocolError::StateMismatch);
         }
 
         // 2. Check nonce
-        if public_inputs.nonce != self.state.nonce + 1 {
+        if phase1.nonce != self.state.nonce + 1 {
             return Err(ProtocolError::InvalidNonce);
         }
 
         // 3. Verify proof
         self.backend.verify(proof_bytes, &public_inputs)?;
-
-
 
         // 4. Enforce policy
         policy::enforce(&public_inputs)?;
@@ -56,9 +52,4 @@ impl VerifierEngine {
     }
 }
 
-#[derive(Debug)]
-pub struct PublicInputs {
-    pub threshold: u64,
-    pub old_state_root: [u8; 32],
-    pub nonce: u64,
-}
+pub type PublicInputs = ProofClaims;

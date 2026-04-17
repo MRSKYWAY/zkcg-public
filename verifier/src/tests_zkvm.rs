@@ -1,42 +1,37 @@
 #![cfg(feature = "zk-vm")]
 
 use crate::{
-    engine::{PublicInputs, VerifierEngine},
+    Proof, ProofSystem, Verifier,
     backend_zkvm::ZkVmBackend,
+    engine::{PublicInputs, VerifierEngine},
 };
-use zkcg_common::{
-    errors::ProtocolError,
-    state::ProtocolState,
-    types::Commitment,
-};
-use zkcg_zkvm_host::{prove, ZkVmProverError};
+use zkcg_common::{errors::ProtocolError, state::ProtocolState, types::Commitment};
+use zkcg_zkvm_host::{ZkVmProverError, prove};
 
 fn commitment() -> Commitment {
     Commitment([42u8; 32])
 }
+
 fn valid_inputs() -> PublicInputs {
-    PublicInputs {
-        threshold: 10,
-        old_state_root: [9u8; 32],
-        nonce: 7,
-    }
+    PublicInputs::phase1_score(10, [9u8; 32], 7)
 }
-// Consistent inputs (override genesis for matching)
+
 fn test_inputs() -> PublicInputs {
-    PublicInputs {
-        threshold: 10,
-        old_state_root: [0u8; 32], // Match genesis root for simplicity
-        nonce: 1, // state.nonce + 1
+    PublicInputs::phase1_score(10, [0u8; 32], 1)
+}
+
+fn mock_state(inputs: &PublicInputs) -> ProtocolState {
+    let phase1 = inputs.phase1().unwrap();
+    ProtocolState {
+        state_root: phase1.old_state_root,
+        nonce: phase1.nonce - 1,
+        ..ProtocolState::genesis()
     }
 }
 
-// Helper: Mock state to match inputs (avoids genesis mismatch)
-fn mock_state(inputs: &PublicInputs) -> ProtocolState {
-    ProtocolState {
-        state_root: inputs.old_state_root,
-        nonce: inputs.nonce - 1, // Pre-transition
-        ..ProtocolState::genesis()
-    }
+fn prove_valid(inputs: &PublicInputs) -> Vec<u8> {
+    let phase1 = inputs.phase1().unwrap();
+    prove(5, phase1.threshold, phase1.old_state_root, phase1.nonce).expect("valid proof")
 }
 
 #[test]
@@ -44,90 +39,91 @@ fn zkvm_valid_transition_succeeds() {
     let inputs = test_inputs();
     let state = mock_state(&inputs);
 
-    let mut engine = VerifierEngine::new(
-        state.clone(),
-        Box::new(ZkVmBackend),
-    );
+    let mut engine = VerifierEngine::new(state.clone(), Box::new(ZkVmBackend));
 
-    // Prove with matching inputs (score=5 <=10)
-    let proof = prove(5, inputs.threshold, inputs.old_state_root, inputs.nonce)
-        .expect("valid proof generated");
-    println!("Generated proof: {:?}", proof);
-    let result = engine.process_transition(
-        &proof,
-        inputs,
-        commitment(),
-    );
-    println!("Result: {:?}", result);
+    let proof_bytes = prove_valid(&inputs);
+    let proof = Proof::new(ProofSystem::ZkVm, proof_bytes.clone());
+
+    assert!(Verifier::verify(&proof, &inputs).is_ok());
+
+    let result = engine.process_transition(&proof_bytes, inputs, commitment());
 
     assert!(result.is_ok(), "Valid transition should succeed");
 }
 
 #[test]
 fn zkvm_policy_violation_is_rejected() {
-    let mut inputs = valid_inputs();
-    let result = prove(20, 10, inputs.old_state_root, inputs.nonce);
+    let inputs = valid_inputs();
+    let phase1 = inputs.phase1().unwrap();
+    let result = prove(20, 10, phase1.old_state_root, phase1.nonce);
 
-    assert!(matches!(
-        result,
-        Err(ZkVmProverError::PolicyViolation)
-    ));
+    assert!(matches!(result, Err(ZkVmProverError::PolicyViolation)));
 }
 
 #[test]
 fn zkvm_tampered_proof_is_rejected() {
-    let mut inputs = valid_inputs();
-    let mut proof = prove(5, 10, inputs.old_state_root, inputs.nonce).unwrap();
+    let inputs = test_inputs();
+    let mut proof_bytes = prove_valid(&inputs);
 
-    proof[0] ^= 0xFF; // corrupt method id
+    proof_bytes[0] ^= 0xFF;
 
-    let state = ProtocolState::genesis();
-    let mut engine = VerifierEngine::new(
-        state.clone(),
-        Box::new(ZkVmBackend),
-    );
-
-    let inputs = PublicInputs {
-        threshold: 10,
-        old_state_root: state.state_root,
-        nonce: state.nonce + 1,
-    };
-
-    let result = engine.process_transition(
-        &proof,
-        inputs,
-        commitment(),
-    );
+    let proof = Proof::new(ProofSystem::ZkVm, proof_bytes);
+    let result = Verifier::verify(&proof, &inputs);
 
     assert!(matches!(result, Err(ProtocolError::InvalidProof)));
 }
 
 #[test]
 fn zkvm_empty_proof_is_rejected() {
-    let state = ProtocolState::genesis();
-    let mut engine = VerifierEngine::new(
-        state.clone(),
-        Box::new(ZkVmBackend),
-    );
-
-    let inputs = PublicInputs {
-        threshold: 10,
-        old_state_root: state.state_root,
-        nonce: state.nonce + 1,
-    };
-
-    let result = engine.process_transition(
-        &[],
-        inputs,
-        commitment(),
-    );
+    let proof = Proof::new(ProofSystem::ZkVm, Vec::<u8>::new());
+    let result = Verifier::verify(&proof, &test_inputs());
 
     assert!(result.is_err());
 }
 
 #[test]
+fn zkvm_threshold_mismatch_is_rejected() {
+    let inputs = test_inputs();
+    let proof = Proof::new(ProofSystem::ZkVm, prove_valid(&inputs));
+    let phase1 = inputs.phase1().unwrap();
+    let mismatched_inputs =
+        PublicInputs::phase1_score(phase1.threshold + 1, phase1.old_state_root, phase1.nonce);
+
+    let result = Verifier::verify(&proof, &mismatched_inputs);
+
+    assert!(matches!(result, Err(ProtocolError::InvalidProof)));
+}
+
+#[test]
+fn zkvm_state_root_mismatch_is_rejected() {
+    let inputs = test_inputs();
+    let proof = Proof::new(ProofSystem::ZkVm, prove_valid(&inputs));
+    let phase1 = inputs.phase1().unwrap();
+    let mismatched_inputs = PublicInputs::phase1_score(phase1.threshold, [7u8; 32], phase1.nonce);
+
+    let result = Verifier::verify(&proof, &mismatched_inputs);
+
+    assert!(matches!(result, Err(ProtocolError::InvalidProof)));
+}
+
+#[test]
+fn zkvm_nonce_mismatch_is_rejected() {
+    let inputs = test_inputs();
+    let proof = Proof::new(ProofSystem::ZkVm, prove_valid(&inputs));
+    let phase1 = inputs.phase1().unwrap();
+    let mismatched_inputs =
+        PublicInputs::phase1_score(phase1.threshold, phase1.old_state_root, phase1.nonce + 1);
+
+    let result = Verifier::verify(&proof, &mismatched_inputs);
+
+    assert!(matches!(result, Err(ProtocolError::InvalidProof)));
+}
+
+#[test]
 fn zkvm_overflow_inputs_rejected() {
-    let mut inputs = valid_inputs();
-    let result = prove(u64::MAX, u64::MAX - 1, inputs.old_state_root, inputs.nonce);
+    let inputs = valid_inputs();
+    let phase1 = inputs.phase1().unwrap();
+    let result = prove(u64::MAX, u64::MAX - 1, phase1.old_state_root, phase1.nonce);
+
     assert!(result.is_err());
 }

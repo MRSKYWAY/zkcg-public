@@ -1,8 +1,5 @@
+use crate::{backend::ProofBackend, engine::PublicInputs};
 use zkcg_common::errors::ProtocolError;
-use crate::{
-    backend::ProofBackend,
-    engine::PublicInputs,
-};
 
 #[derive(Default)]
 pub struct StubBackend;

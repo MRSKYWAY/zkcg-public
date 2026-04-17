@@ -18,10 +18,11 @@ Use **zkVM** to attest that:
 ### Code
 
 ```rust
-halo2_backend.verify(&proof, &inputs)
+let proof = Proof::new(ProofSystem::Halo2, proof_bytes);
+Verifier::verify(&proof, &inputs)
 ```
 
-Halo2 verifies:
+ZKCG routes to the Halo2 adapter and verifies:
 
 | Property | Enforced |
 |-------|---------|

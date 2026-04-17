@@ -1,5 +1,5 @@
-use zkcg_common::state::ProtocolState;
 use std::sync::{Arc, Mutex};
+use zkcg_common::state::ProtocolState;
 
 #[derive(Clone)]
 pub struct StateStore {

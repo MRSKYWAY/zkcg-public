@@ -1,0 +1,1 @@
+{"id":"6a12b08cde5ed758","source_id_to_path":{"0":"contracts/examples/BaseZKCGDecisionConsumer.sol","1":"contracts/examples/PrivateLoanEligibilityGate.sol","2":"contracts/interfaces/IZKCGVerifier.sol","3":"contracts/libraries/ZKCGDecisionLib.sol"},"language":"Solidity"}

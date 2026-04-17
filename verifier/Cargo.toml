@@ -1,47 +1,89 @@
 [package]
 name = "zkcg-verifier"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
-description = "Public verifier and node for ZKCG – trustless off-chain computation verification"
+description = "ZKCG proof verifier supporting Halo2 circuits and zkVM execution receipts"
 license = "Apache-2.0"
+homepage = "https://github.com/MRSKYWAY/ZKCG"
 repository = "https://github.com/MRSKYWAY/zkcg-verifier"
-keywords = ["zk", "zero-knowledge", "verifier", "halo2", "risc0"]
-categories = ["cryptography", "cryptography::cryptocurrencies"]
+documentation = "https://docs.rs/zkcg-verifier"
+keywords = ["zk", "zero-knowledge", "protocol", "cryptography"]
+categories = ["cryptography", "data-structures"]
 readme = "README.md"
 publish = true
 
 [dependencies]
-zkcg-common = { path = "../common" }
+zkcg-common = { path = "../common", version = "0.2.0" }
 # Optional ZK dependencies
 halo2_proofs = {version = "0.3.2", optional = true}
+halo2_proofs_kzg = { package = "halo2_proofs", git = "https://github.com/zkonduit/halo2", optional = true }
 ff = { version = "0.13", optional = true }
-circuits = {version = "0.1.0", path = "../circuits", optional = true }
-zkcg-zkvm-host = { path = "../zkvm/host", optional = true, features = ["zk-vm"] }
+zkcg-circuits = {version = "0.1.2", path = "../circuits", optional = true }
+zkcg-halo2-prover = { path = "../halo2/prover", optional = true }
+zkcg-zkvm-host = { path = "../zkvm/host", optional = true, features = ["zk-vm"], version = "0.2.0" }
 serde = { version = "1", features = ["derive"], optional = true }
 bincode = { version = "1", optional = true }
 risc0-zkp = "3"
 risc0-core = "3"
 halo2curves = { version = "0.6", optional = true }
+halo2curves_kzg = { package = "halo2curves", git = "https://github.com/privacy-scaling-explorations/halo2curves", rev = "b753a832e92d5c86c5c997327a9cf9de86a18851", optional = true }
 risc0-zkvm = { version = "3", default-features = false }
 sha2 = "0.10"
-rand = "0.8"
+rand = "0.8.5"
+rand_distr = "0.4.3"
+rayon = "1.10"
 
+[[bench]]
+name = "halo2_verify"
+harness = false
+
+[[bench]]
+name = "zkvm_verify"
+harness = false
+
+[[example]]
+name = "de_fi_lending_sim"
+path = "examples/de_fi_lending_sim.rs"
+required-features = ["zk-halo2"]
+
+[[example]]
+name = "de_fi_lending_sim_parallel"
+path = "examples/de_fi_lending_sim_parallel.rs"
+required-features = ["zk-halo2"]
+
+[[example]]
+name = "zkvm_lending_sim"
+path = "examples/zkvm_lending_sim.rs"
+required-features = ["zk-vm"]
+
+[[example]]
+name = "zkvm_attests_halo2"
+path = "examples/zkvm_attests_halo2.rs"
+required-features = ["zk-halo2", "zk-vm"]
 
 [dev-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+bincode = "1.3"
 rand = "0.8"
 halo2curves = "0.6"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]
 default = []
 zk-halo2 = [
     "halo2_proofs",
     "ff",
-    "circuits",
+    "zkcg-circuits",
     "halo2curves",
+    "dep:zkcg-halo2-prover",
+]
+zk-halo2-kzg = [
+    "halo2_proofs_kzg",
+    "halo2curves_kzg",
 ]
 zk-vm = [
   "serde",
   "bincode",
   "zkcg-zkvm-host",
-  "circuits"
+  "zkcg-circuits"
   ]
