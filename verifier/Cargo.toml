@@ -14,6 +14,7 @@ publish = true
 
 [dependencies]
 zkcg-common = { path = "../common", version = "0.2.0" }
+zkcg-halo2-test = { path = "../zkcg-halo2-test", version = "0.1.0" }
 # Optional ZK dependencies
 halo2_proofs = {version = "0.3.2", optional = true}
 halo2_proofs_kzg = { package = "halo2_proofs", git = "https://github.com/zkonduit/halo2", optional = true }
