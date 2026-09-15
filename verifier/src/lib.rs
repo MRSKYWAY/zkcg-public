@@ -44,6 +44,24 @@ mod tests_equivalence;
 mod tests_rwa;
 
 #[cfg(all(test, feature = "zk-halo2"))]
+mod tests_adversarial;
+
+#[cfg(all(test, feature = "zk-halo2"))]
+mod tests_mutation;
+
+#[cfg(all(test, feature = "zk-halo2"))]
+mod tests_phase3;
+
+#[cfg(all(test, feature = "zk-halo2", feature = "zk-vm"))]
+mod tests_phase5;
+
+#[cfg(all(test, feature = "zk-halo2"))]
+mod tests_phase8;
+
+#[cfg(all(test, feature = "zk-halo2"))]
+mod tests_security_crate;
+
+#[cfg(all(test, feature = "zk-halo2"))]
 mod tests_payout;
 
 #[cfg(test)]
