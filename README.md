@@ -1,4 +1,4 @@
-# ZKCG — Proof-Backed RWA Compliance Gateway
+# ZKCG — Proof-Backed RWA Compliance Gateway 
 
 [![zkcg-verifier](https://img.shields.io/crates/v/zkcg-verifier.svg)](https://crates.io/crates/zkcg-verifier)
 [![zkcg-common](https://img.shields.io/crates/v/zkcg-common.svg)](https://crates.io/crates/zkcg-common)
