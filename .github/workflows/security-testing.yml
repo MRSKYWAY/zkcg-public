@@ -1,0 +1,62 @@
+name: security-testing
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'zkcg-halo2-test/**'
+      - 'halo2-verifier-security-patterns/**'
+      - 'verifier/**'
+      - 'common/**'
+      - 'circuits/**'
+      - 'zkvm/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - name: Check repository diff
+        run: git diff --check
+      - name: Test reusable crate
+        run: cargo test -p zkcg-halo2-test
+      - name: Test reusable crate docs and Halo2 feature
+        run: |
+          cargo test -p zkcg-halo2-test --doc
+          cargo test -p zkcg-halo2-test --features halo2
+      - name: Check verifier
+        run: cargo check -p zkcg-verifier --features zk-halo2 --tests
+      - name: Phase 1 adversarial testing
+        run: cargo test -p zkcg-verifier --features zk-halo2 tests_adversarial -- --nocapture
+      - name: Phase 2 mutation testing
+        run: cargo test -p zkcg-verifier --features zk-halo2 tests_mutation -- --nocapture
+      - name: Phase 3 malformed and replay testing
+        run: cargo test -p zkcg-verifier --features zk-halo2 tests_phase3 -- --nocapture
+      - name: Phase 8 circuit soundness mutation testing
+        run: cargo test -p zkcg-verifier --features zk-halo2 tests_phase8 -- --nocapture
+      - name: Reusable crate consumer integration
+        run: cargo test -p zkcg-verifier --features zk-halo2 tests_security_crate -- --nocapture
+      - name: Install RISC0 toolchain
+        run: |
+          curl -L https://risczero.com/install | bash
+          rzup install
+      - name: Phase 5 differential Halo2/RISC0 testing
+        env:
+          PHASE5_RISC0_SHARD: 0
+          PHASE5_RISC0_SHARDS: 10
+        run: cargo test -p zkcg-verifier --features zk-halo2,zk-vm tests_phase5 -- --nocapture
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy crate
+        run: cargo clippy -p zkcg-halo2-test --all-features --all-targets -- -D warnings
+      - name: Clippy verifier
+        run: cargo clippy -p zkcg-verifier --features zk-halo2 --tests -- -D warnings
+      - name: Package crate
+        run: cargo package -p zkcg-halo2-test --allow-dirty
