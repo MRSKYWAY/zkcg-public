@@ -1,0 +1,33 @@
+[package]
+name = "zkcg-halo2-test-fuzz"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+zkcg-halo2-test = { path = ".." }
+
+[[bin]]
+name = "proof_bytes"
+path = "fuzz_targets/proof_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "public_inputs"
+path = "fuzz_targets/public_inputs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "proof_dispatch"
+path = "fuzz_targets/proof_dispatch.rs"
+test = false
+doc = false
+bench = false
