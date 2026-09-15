@@ -7,8 +7,7 @@ members = [
     "zkvm/guest",
     "zkvm/host",
     "halo2/prover",
-    "payout/worker",
-    "zkcg-halo2-test"
+    "payout/worker"
 ]
 resolver = "2"
 
