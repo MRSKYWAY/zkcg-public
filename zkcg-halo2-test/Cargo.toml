@@ -15,3 +15,5 @@ halo2 = ["dep:halo2_proofs"]
 
 [dependencies]
 halo2_proofs = { version = "0.3.2", optional = true }
+
+[workspace]
