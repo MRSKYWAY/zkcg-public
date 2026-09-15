@@ -5,6 +5,7 @@ edition = "2024"
 description = "Reusable security-testing primitives for Halo2-based proof systems"
 license = "Apache-2.0"
 repository = "https://github.com/MRSKYWAY/zkcg-public"
+documentation = "https://docs.rs/zkcg-halo2-test"
 readme = "README.md"
 keywords = ["halo2", "zero-knowledge", "security", "testing", "fuzzing"]
 categories = ["cryptography", "development-tools::testing"]
