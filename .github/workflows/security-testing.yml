@@ -1,0 +1,38 @@
+name: security-testing
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'zkcg-halo2-test/**'
+      - 'halo2-verifier-security-patterns/**'
+      - '.github/workflows/security-testing.yml'
+  workflow_dispatch:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: zkcg-halo2-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - name: Check repository diff
+        working-directory: .
+        run: git diff --check
+      - name: Test reusable crate
+        run: cargo test
+      - name: Test reusable crate docs
+        run: cargo test --doc
+      - name: Test reusable crate with Halo2 feature
+        run: cargo test --features halo2
+      - name: Format
+        run: cargo fmt -- --check
+      - name: Clippy
+        run: cargo clippy --all-features --all-targets -- -D warnings
+      - name: Package crate
+        run: cargo package --allow-dirty

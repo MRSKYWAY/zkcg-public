@@ -7,7 +7,8 @@ members = [
     "zkvm/guest",
     "zkvm/host",
     "halo2/prover",
-    "payout/worker"]
+    "payout/worker"
+]
 resolver = "2"
 
 [profile.release]
