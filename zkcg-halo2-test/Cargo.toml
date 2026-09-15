@@ -1,10 +1,10 @@
 [package]
 name = "zkcg-halo2-test"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Reusable security-testing primitives for Halo2-based proof systems"
 license = "Apache-2.0"
-repository = "https://github.com/MRSKYWAY/ZKCG"
+repository = "https://github.com/MRSKYWAY/zkcg-public"
 readme = "README.md"
 keywords = ["halo2", "zero-knowledge", "security", "testing", "fuzzing"]
 categories = ["cryptography", "development-tools::testing"]
